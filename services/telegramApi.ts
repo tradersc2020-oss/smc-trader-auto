@@ -48,12 +48,13 @@ function emojiTipo(tipo: string): string {
   return '⏸';
 }
 
-export function formatarMensagemTelegram(analise: Analise): string {
+export function formatarMensagemTelegram(analise: Analise, entradaEscalonada: boolean = true): string {
   const { ativo, timeframe, tipo, ordem, score, resumo, isEntradaForte, timestamp } = analise;
   const dataHora    = formatarDataHora(timestamp);
   const tipoEmoji   = emojiTipo(tipo);
   const scoreEmoji  = emojiScore(score);
-  const escalonada  = !!(ordem.entrada1 && ordem.entrada2);
+  // Respeita config: só mostra entradas separadas se escalonada habilitada
+  const escalonada  = entradaEscalonada && !!(ordem.entrada1 && ordem.entrada2);
   const multiTP     = !!(ordem.tp1 && ordem.tp2);
 
   let msg = `🤖 *SMC TRADER ALERT*\n`;
@@ -64,11 +65,13 @@ export function formatarMensagemTelegram(analise: Analise): string {
   msg += `${tipoEmoji} *TIPO:* ${tipo.replace('_', ' ')}\n`;
 
   // Entrada: escalonada ou simples
+  // Quando não escalonada: usa entrada1 (principal) se disponível, senão entrada
+  const entradaSimples = ordem.entrada1 ?? ordem.entrada;
   if (escalonada) {
     msg += `🎯 *ENTRADA 1 (${ordem.entrada1_pct ?? 50}%):* ${ordem.entrada1}\n`;
     msg += `🎯 *ENTRADA 2 (${ordem.entrada2_pct ?? 50}%):* ${ordem.entrada2}\n`;
   } else {
-    msg += `🎯 *ENTRADA:* ${ordem.entrada || 'N/A'}\n`;
+    msg += `🎯 *ENTRADA:* ${entradaSimples || 'N/A'}\n`;
   }
 
   msg += `🛑 *STOP:* ${ordem.sl || 'N/A'}\n`;
@@ -179,9 +182,12 @@ export function formatarMensagensEA(
   // Multi-TP só funciona quando entrada escalonada habilitada
   const multiTP    = entradaEscalonada && !!(ordem.tp1 && ordem.tp2 && ordem.tp3);
 
-  const e1   = normalizarPreco(escalonada ? (ordem.entrada1 ?? ordem.entrada) : ordem.entrada);
-  const e2   = normalizarPreco(escalonada ? (ordem.entrada2 ?? ordem.entrada) : ordem.entrada);
-  const eMed = normalizarPreco(ordem.entrada);
+  // Entrada principal = entrada1 se existir (seja escalonada ou não)
+  // entrada (média) só é usada como fallback quando entrada1 não existe
+  const entradaPrincipal = ordem.entrada1 ?? ordem.entrada;
+  const e1   = normalizarPreco(escalonada ? (ordem.entrada1 ?? ordem.entrada) : entradaPrincipal);
+  const e2   = normalizarPreco(escalonada ? (ordem.entrada2 ?? ordem.entrada) : entradaPrincipal);
+  const eMed = normalizarPreco(escalonada ? ordem.entrada : entradaPrincipal);
 
   // Calcula lotes reais por ordem (34/33/33) e verifica se é viável dividir
   let lot1: number | null = null;
@@ -249,7 +255,7 @@ export async function enviarTelegramComEA(
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
 
   // 1ª mensagem — alerta humano com emojis e Markdown
-  const msgHumana = formatarMensagemTelegram(analise);
+  const msgHumana = formatarMensagemTelegram(analise, entradaEscalonada);
   await axios.post(url, {
     chat_id: chatId,
     text: msgHumana,

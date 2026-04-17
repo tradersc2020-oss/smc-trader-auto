@@ -7,6 +7,8 @@ interface TelegramButtonProps {
   analise: Analise;
   botToken: string;
   chatId: string;
+  lotSugerido?: number | null;
+  entradaEscalonada?: boolean;
   onSuccess?: () => void;
 }
 
@@ -14,6 +16,8 @@ export default function TelegramButton({
   analise,
   botToken,
   chatId,
+  lotSugerido = null,
+  entradaEscalonada = true,
   onSuccess,
 }: TelegramButtonProps) {
   const [sending, setSending] = useState(false);
@@ -25,7 +29,7 @@ export default function TelegramButton({
     }
     setSending(true);
     try {
-      await enviarTelegramComEA(botToken, chatId, analise);
+      await enviarTelegramComEA(botToken, chatId, analise, lotSugerido, entradaEscalonada);
       Alert.alert('✅ Enviado para o Telegram');
       onSuccess?.();
     } catch (err: any) {

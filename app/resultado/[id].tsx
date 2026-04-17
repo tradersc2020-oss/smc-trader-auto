@@ -34,10 +34,11 @@ export default function ResultadoScreen() {
   const [analise, setAnalise] = useState<Analise | null>(null);
   const [loading, setLoading] = useState(true);
   const [telegramConfig, setTelegramConfig] = useState({ botToken: '', chatId: '' });
-  const [resultado, setResultado]   = useState<ResultadoOperacao>(null);
+  const [resultado, setResultado]     = useState<ResultadoOperacao>(null);
   const [zoomVisible, setZoomVisible] = useState(false);
   const [risco, setRisco] = useState<{ reais: number; percento: number; lotSugerido: number | null } | null>(null);
-  const [twelveDataKey, setTwelveDataKey] = useState('');
+  const [twelveDataKey, setTwelveDataKey]       = useState('');
+  const [entradaEscalonada, setEntradaEscalonada] = useState(true);
   const insets = useSafeAreaInsets();
 
   // Animação de entrada
@@ -52,6 +53,7 @@ export default function ResultadoScreen() {
       setResultado(a?.resultado ?? null);
       setTelegramConfig({ botToken: config.telegramBotToken, chatId: config.telegramChatId });
       setTwelveDataKey(config.twelveDataApiKey);
+      setEntradaEscalonada(config.entradaEscalonada);
       if (config.bancaTotal > 0) {
         const reais = config.bancaTotal * config.riscoPercento / 100;
         let lotSugerido: number | null = null;
@@ -395,6 +397,8 @@ export default function ResultadoScreen() {
           analise={analise}
           botToken={telegramConfig.botToken}
           chatId={telegramConfig.chatId}
+          lotSugerido={risco?.lotSugerido ?? null}
+          entradaEscalonada={entradaEscalonada}
         />
 
         <TouchableOpacity

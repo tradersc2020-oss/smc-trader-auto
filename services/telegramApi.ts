@@ -50,19 +50,58 @@ function emojiTipo(tipo: string): string {
 
 export function formatarMensagemTelegram(analise: Analise): string {
   const { ativo, timeframe, tipo, ordem, score, resumo, isEntradaForte, timestamp } = analise;
-  const dataHora = formatarDataHora(timestamp);
-  const tipoEmoji = emojiTipo(tipo);
-  const scoreEmoji = emojiScore(score);
+  const dataHora    = formatarDataHora(timestamp);
+  const tipoEmoji   = emojiTipo(tipo);
+  const scoreEmoji  = emojiScore(score);
+  const escalonada  = !!(ordem.entrada1 && ordem.entrada2);
+  const multiTP     = !!(ordem.tp1 && ordem.tp2);
 
   let msg = `🤖 *SMC TRADER ALERT*\n`;
   msg += `━━━━━━━━━━━━━━━\n`;
   msg += `📊 *${ativo}* | ${timeframe}\n`;
   msg += `🕐 ${dataHora}\n\n`;
+
   msg += `${tipoEmoji} *TIPO:* ${tipo.replace('_', ' ')}\n`;
-  msg += `🎯 *ENTRADA:* ${ordem.entrada || 'N/A'}\n`;
+
+  // Entrada: escalonada ou simples
+  if (escalonada) {
+    msg += `🎯 *ENTRADA 1 (${ordem.entrada1_pct ?? 50}%):* ${ordem.entrada1}\n`;
+    msg += `🎯 *ENTRADA 2 (${ordem.entrada2_pct ?? 50}%):* ${ordem.entrada2}\n`;
+  } else {
+    msg += `🎯 *ENTRADA:* ${ordem.entrada || 'N/A'}\n`;
+  }
+
   msg += `🛑 *STOP:* ${ordem.sl || 'N/A'}\n`;
-  msg += `✅ *TP:* ${ordem.tp || 'N/A'}\n`;
-  msg += `⚖️ *RR:* ${ordem.rr || 'N/A'}\n\n`;
+
+  // TPs: multi ou simples
+  if (multiTP) {
+    msg += `✅ *TP 1 (H1):* ${ordem.tp1}  _(${ordem.rr_tp1 ?? 'N/A'})_\n`;
+    if (ordem.tp2) msg += `✅ *TP 2 (H4):* ${ordem.tp2}  _(${ordem.rr_tp2 ?? 'N/A'})_\n`;
+    if (ordem.tp3) msg += `✅ *TP 3 (MACRO):* ${ordem.tp3}  _(${ordem.rr_tp3 ?? 'N/A'})_\n`;
+  } else {
+    msg += `✅ *TP:* ${ordem.tp || 'N/A'}\n`;
+    msg += `⚖️ *RR:* ${ordem.rr || 'N/A'}\n`;
+  }
+
+  msg += `\n`;
+
+  // Bias badges para modo institucional
+  if (analise.modoInstitucional) {
+    const d1Color = analise.bias_d1 === 'ALTA' ? '📈' : analise.bias_d1 === 'BAIXA' ? '📉' : '➡️';
+    const h4Color = analise.bias_h4 === 'ALTA' ? '📈' : analise.bias_h4 === 'BAIXA' ? '📉' : '➡️';
+    msg += `${d1Color} *D1:* ${analise.bias_d1 ?? 'N/A'}  |  ${h4Color} *H4:* ${analise.bias_h4 ?? 'N/A'}\n`;
+    if (analise.alinhamento_total !== undefined) {
+      msg += `${analise.alinhamento_total ? '✅' : '❌'} *Alinhamento:* ${analise.alinhamento_total ? 'TOTAL' : 'DESALINHADO'}\n`;
+    }
+    if (analise.win_probability != null) {
+      msg += `🎲 *Win Probability:* ${analise.win_probability}%\n`;
+    }
+    msg += `\n`;
+  } else if (analise.modoCompleto && analise.bias_h4) {
+    const h4Emoji = analise.bias_h4 === 'ALTA' ? '📈' : analise.bias_h4 === 'BAIXA' ? '📉' : '➡️';
+    msg += `${h4Emoji} *H4 Bias:* ${analise.bias_h4}\n\n`;
+  }
+
   msg += `📊 *SCORE:* ${score}/100 ${scoreEmoji}\n`;
   msg += `🧠 *VALE ENTRAR:* ${resumo.vale ? 'SIM' : 'NÃO'}\n`;
   if (resumo.justificativa) {
@@ -77,29 +116,114 @@ export function formatarMensagemTelegram(analise: Analise): string {
   return msg;
 }
 
-// Mensagem separada sem emojis para o EA do MT5 parsear corretamente
-export function formatarMensagemEA(analise: Analise): string | null {
-  const { ativo, timeframe, tipo, ordem, score, isEntradaForte } = analise;
-  if (tipo === 'SEM_OPERACAO' || score < 50 || !ordem.entrada || !ordem.sl || !ordem.tp) {
-    return null;
-  }
-  const eaTipo = tipo === 'COMPRA' ? 'BUY' : 'SELL';
-  const entradaNorm = normalizarPreco(ordem.entrada);
-  const slNorm      = normalizarPreco(ordem.sl);
-  const tpNorm      = normalizarPreco(ordem.tp);
-  const tsSegundos = Math.floor(Date.now() / 1000);
+const LOT_MINIMO = 0.01;
+
+// Arredonda lote para baixo com 2 casas (ex: 0.0368 → 0.03)
+function arredondarLote(lote: number): number {
+  return Math.floor(lote * 100) / 100;
+}
+
+// Constrói um bloco EA individual para o MT5
+function blocoEA(params: {
+  ativo: string;
+  eaTipo: string;
+  entry: string;
+  sl: string;
+  tp: string;
+  lotPct: number;
+  lot: number | null;  // lote real calculado; null = EA usa LOT_PCT
+  ordem: number;
+  totalOrdens: number;
+  score: number;
+  timeframe: string;
+  isEntradaForte: boolean;
+  tsSegundos: number;
+}): string {
   let msg = `SMCSTART\n`;
-  msg += `SYMBOL=${ativo}\n`;
-  msg += `TYPE=${eaTipo}\n`;
-  msg += `ENTRY=${entradaNorm}\n`;
-  msg += `SL=${slNorm}\n`;
-  msg += `TP=${tpNorm}\n`;
-  msg += `SCORE=${score}\n`;
-  msg += `TIMEFRAME=${timeframe}\n`;
-  msg += `FORTE=${isEntradaForte ? '1' : '0'}\n`;
-  msg += `TS=${tsSegundos}\n`;
+  msg += `SYMBOL=${params.ativo}\n`;
+  msg += `TYPE=${params.eaTipo}\n`;
+  msg += `ENTRY=${params.entry}\n`;
+  msg += `SL=${params.sl}\n`;
+  msg += `TP=${params.tp}\n`;
+  if (params.lot !== null) {
+    msg += `LOT=${params.lot.toFixed(2)}\n`;
+  }
+  msg += `LOT_PCT=${params.lotPct}\n`;
+  msg += `ORDER=${params.ordem}\n`;
+  msg += `TOTAL_ORDERS=${params.totalOrdens}\n`;
+  msg += `SCORE=${params.score}\n`;
+  msg += `TIMEFRAME=${params.timeframe}\n`;
+  msg += `FORTE=${params.isEntradaForte ? '1' : '0'}\n`;
+  msg += `TS=${params.tsSegundos}\n`;
   msg += `SMCEND`;
   return msg;
+}
+
+// Retorna array de blocos EA — 1 por TP (MT5 abre uma ordem independente por mensagem)
+// lotSugerido: lote calculado pelo app (da gestão de risco). Null = EA usa LOT_PCT.
+export function formatarMensagensEA(
+  analise: Analise,
+  lotSugerido: number | null = null,
+  entradaEscalonada: boolean = true,
+): string[] {
+  const { ativo, timeframe, tipo, ordem, score, isEntradaForte } = analise;
+
+  const tpPrimario = ordem.tp1 || ordem.tp;
+  if (tipo === 'SEM_OPERACAO' || score < 50 || !ordem.sl || !tpPrimario) return [];
+
+  // Se entrada escalonada desabilitada nas config → força 1 único bloco
+  const escalonada = entradaEscalonada && !!(ordem.entrada1 && ordem.entrada2);
+  const eaTipo     = tipo === 'COMPRA' ? 'BUY' : 'SELL';
+  const slNorm     = normalizarPreco(ordem.sl);
+  const tsSegundos = Math.floor(Date.now() / 1000);
+  // Multi-TP só funciona quando entrada escalonada habilitada
+  const multiTP    = entradaEscalonada && !!(ordem.tp1 && ordem.tp2 && ordem.tp3);
+
+  const e1   = normalizarPreco(escalonada ? (ordem.entrada1 ?? ordem.entrada) : ordem.entrada);
+  const e2   = normalizarPreco(escalonada ? (ordem.entrada2 ?? ordem.entrada) : ordem.entrada);
+  const eMed = normalizarPreco(ordem.entrada);
+
+  // Calcula lotes reais por ordem (34/33/33) e verifica se é viável dividir
+  let lot1: number | null = null;
+  let lot2: number | null = null;
+  let lot3: number | null = null;
+  let podeDividir = true;
+
+  if (lotSugerido !== null && multiTP) {
+    lot1 = arredondarLote(lotSugerido * 0.34);
+    lot2 = arredondarLote(lotSugerido * 0.33);
+    lot3 = arredondarLote(lotSugerido * 0.33);
+    // Colapsa para 1 ordem se qualquer lote ficar abaixo do mínimo
+    if (lot1 < LOT_MINIMO || lot2 < LOT_MINIMO || lot3 < LOT_MINIMO) {
+      podeDividir = false;
+    }
+  }
+
+  if (multiTP && podeDividir) {
+    return [
+      blocoEA({ ativo, eaTipo, entry: e1,   sl: slNorm, tp: normalizarPreco(ordem.tp1!), lot: lot1, lotPct: 34, ordem: 1, totalOrdens: 3, score, timeframe, isEntradaForte, tsSegundos }),
+      blocoEA({ ativo, eaTipo, entry: eMed, sl: slNorm, tp: normalizarPreco(ordem.tp2!), lot: lot2, lotPct: 33, ordem: 2, totalOrdens: 3, score, timeframe, isEntradaForte, tsSegundos }),
+      blocoEA({ ativo, eaTipo, entry: e2,   sl: slNorm, tp: normalizarPreco(ordem.tp3!), lot: lot3, lotPct: 33, ordem: 3, totalOrdens: 3, score, timeframe, isEntradaForte, tsSegundos }),
+    ];
+  }
+
+  // Single TP ou lote insuficiente para dividir → 1 único bloco com lote total
+  const lotTotal = lotSugerido !== null ? lotSugerido : null;
+  return [blocoEA({
+    ativo, eaTipo,
+    entry: e1,
+    sl: slNorm,
+    tp: normalizarPreco(tpPrimario),
+    lot: lotTotal,
+    lotPct: 100,
+    ordem: 1, totalOrdens: 1, score, timeframe, isEntradaForte, tsSegundos,
+  })];
+}
+
+// Mantém compatibilidade com código legado
+export function formatarMensagemEA(analise: Analise): string | null {
+  const blocos = formatarMensagensEA(analise, null);
+  return blocos.length > 0 ? blocos[0] : null;
 }
 
 export async function enviarTelegram(
@@ -118,7 +242,9 @@ export async function enviarTelegram(
 export async function enviarTelegramComEA(
   botToken: string,
   chatId: string,
-  analise: Analise
+  analise: Analise,
+  lotSugerido: number | null = null,
+  entradaEscalonada: boolean = true,
 ): Promise<void> {
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
 
@@ -130,13 +256,13 @@ export async function enviarTelegramComEA(
     parse_mode: 'Markdown',
   }, { timeout: 15000 });
 
-  // 2ª mensagem — bloco EA limpo sem emojis (para o MT5 parsear)
-  const msgEA = formatarMensagemEA(analise);
-  if (msgEA) {
+  // Blocos EA — respeita config entradaEscalonada
+  // false → sempre 1 bloco / true → até 3 blocos se lote viável
+  const blocos = formatarMensagensEA(analise, lotSugerido, entradaEscalonada);
+  for (const bloco of blocos) {
     await axios.post(url, {
       chat_id: chatId,
-      text: msgEA,
-      // sem parse_mode — texto puro, sem formatação
+      text: bloco,
     }, { timeout: 15000 });
   }
 }

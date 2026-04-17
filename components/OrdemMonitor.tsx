@@ -16,6 +16,7 @@ interface Props {
   analise: Analise;
   twelveDataApiKey: string;
   onResultadoAtualizado?: (resultado: 'WIN' | 'LOSS') => void;
+  onMonitoringChange?: (ativo: boolean) => void;
 }
 
 type MonitorStatus = 'PENDENTE' | 'ABERTA' | 'TP1' | 'TP2' | 'WIN' | 'LOSS';
@@ -33,7 +34,7 @@ function distInfo(preco: number, nivel: number): { diff: string; pct: string; ac
   return { diff: diff.toFixed(2), pct, acima };
 }
 
-export default function OrdemMonitor({ analise, twelveDataApiKey, onResultadoAtualizado }: Props) {
+export default function OrdemMonitor({ analise, twelveDataApiKey, onResultadoAtualizado, onMonitoringChange }: Props) {
   const [preco, setPreco]             = useState<number | null>(null);
   const [updateTime, setUpdateTime]   = useState<string>('');
   const [erro, setErro]               = useState<string | null>(null);
@@ -82,11 +83,12 @@ export default function OrdemMonitor({ analise, twelveDataApiKey, onResultadoAtu
 
   const pararMonitoramento = useCallback(() => {
     setMonitorando(false);
+    onMonitoringChange?.(false);
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-  }, []);
+  }, [onMonitoringChange]);
 
   const buscarPreco = useCallback(async () => {
     try {
@@ -210,6 +212,7 @@ export default function OrdemMonitor({ analise, twelveDataApiKey, onResultadoAtu
     tp1HitRef.current     = false;
     tp2HitRef.current     = false;
     setMonitorando(true);
+    onMonitoringChange?.(true);
     buscarPreco();
     const interval = getPollingInterval(analise.ativo);
     intervalRef.current = setInterval(buscarPreco, interval);

@@ -37,8 +37,9 @@ export default function ResultadoScreen() {
   const [resultado, setResultado]     = useState<ResultadoOperacao>(null);
   const [zoomVisible, setZoomVisible] = useState(false);
   const [risco, setRisco] = useState<{ reais: number; percento: number; lotSugerido: number | null } | null>(null);
-  const [twelveDataKey, setTwelveDataKey]       = useState('');
+  const [twelveDataKey, setTwelveDataKey]         = useState('');
   const [entradaEscalonada, setEntradaEscalonada] = useState(true);
+  const [monitorAtivo, setMonitorAtivo]           = useState(false);
   const insets = useSafeAreaInsets();
 
   // Animação de entrada
@@ -294,6 +295,7 @@ export default function ResultadoScreen() {
             analise={analise}
             twelveDataApiKey={twelveDataKey}
             onResultadoAtualizado={r => setResultado(r)}
+            onMonitoringChange={setMonitorAtivo}
           />
         )}
 
@@ -329,40 +331,67 @@ export default function ResultadoScreen() {
         )}
 
         {/* ── Marcar Resultado Win/Loss ──────────────── */}
-        {analise.tipo !== 'SEM_OPERACAO' && (
-          <View style={styles.resultadoSection}>
-            <Text style={styles.resultadoLabel}>RESULTADO DA OPERAÇÃO</Text>
-            <View style={styles.resultadoRow}>
-              <TouchableOpacity
-                style={[
-                  styles.resultadoBtn,
-                  styles.winBtn,
-                  resultado === 'WIN' && styles.winBtnActive,
-                ]}
-                onPress={() => handleMarcarResultado(resultado === 'WIN' ? null : 'WIN')}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.resultadoBtnText}>
-                  {resultado === 'WIN' ? '✅ WIN' : '✅ Marcar WIN'}
-                </Text>
-              </TouchableOpacity>
+        {analise.tipo !== 'SEM_OPERACAO' && (() => {
+          // Resultado já definido: mostra o badge de resultado sempre
+          const temResultado = resultado === 'WIN' || resultado === 'LOSS';
 
-              <TouchableOpacity
-                style={[
-                  styles.resultadoBtn,
-                  styles.lossBtn,
-                  resultado === 'LOSS' && styles.lossBtnActive,
-                ]}
-                onPress={() => handleMarcarResultado(resultado === 'LOSS' ? null : 'LOSS')}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.resultadoBtnText}>
-                  {resultado === 'LOSS' ? '❌ LOSS' : '❌ Marcar LOSS'}
+          // Monitor ativo e sem resultado: oculta botões manuais
+          if (monitorAtivo && !temResultado) {
+            return (
+              <View style={styles.resultadoSection}>
+                <View style={styles.monitorAtivoRow}>
+                  <Ionicons name="pulse" size={13} color="#FFD700" />
+                  <Text style={styles.monitorAtivoText}>
+                    Monitor ativo — WIN/LOSS detectado automaticamente
+                  </Text>
+                </View>
+              </View>
+            );
+          }
+
+          return (
+            <View style={styles.resultadoSection}>
+              {/* Label: manual override quando monitor está parado */}
+              <Text style={styles.resultadoLabel}>
+                {temResultado ? 'RESULTADO DA OPERAÇÃO' : 'MARCAR MANUALMENTE'}
+              </Text>
+              {!temResultado && !monitorAtivo && (
+                <Text style={styles.resultadoSubLabel}>
+                  Inicie o monitor para detecção automática
                 </Text>
-              </TouchableOpacity>
+              )}
+              <View style={styles.resultadoRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.resultadoBtn,
+                    styles.winBtn,
+                    resultado === 'WIN' && styles.winBtnActive,
+                  ]}
+                  onPress={() => handleMarcarResultado(resultado === 'WIN' ? null : 'WIN')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.resultadoBtnText}>
+                    {resultado === 'WIN' ? '✅ WIN' : '✅ Marcar WIN'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.resultadoBtn,
+                    styles.lossBtn,
+                    resultado === 'LOSS' && styles.lossBtnActive,
+                  ]}
+                  onPress={() => handleMarcarResultado(resultado === 'LOSS' ? null : 'LOSS')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.resultadoBtnText}>
+                    {resultado === 'LOSS' ? '❌ LOSS' : '❌ Marcar LOSS'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        )}
+          );
+        })()}
 
         {/* ── Seções de análise ──────────────────────── */}
         {leitura     && <SecaoAnalise emoji="🔎" titulo="LEITURA DO MERCADO"    conteudo={leitura}     corBorda="#FFD700" collapsible />}
@@ -567,8 +596,26 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.5,
-    marginBottom: 10,
+    marginBottom: 6,
     fontFamily: 'monospace',
+  },
+  resultadoSubLabel: {
+    color: '#333',
+    fontSize: 10,
+    fontFamily: 'monospace',
+    marginBottom: 10,
+  },
+  monitorAtivoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  monitorAtivoText: {
+    color: '#FFD700',
+    fontSize: 11,
+    fontFamily: 'monospace',
+    fontWeight: '600',
+    flex: 1,
   },
   resultadoRow: {
     flexDirection: 'row',
